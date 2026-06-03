@@ -148,12 +148,12 @@ def load_compressed(compressed_dict, model_cls, device="cpu"):
 # ---------------------------------------------------------------------------
 
 def analyze_model(model):
-    """Print per-layer integer weight statistics."""
-    print(f"\n{'='*65}")
+    """Print per-layer integer weight statistics and learned bit-widths."""
+    print(f"\n{'='*80}")
     print("PER-LAYER INTEGER WEIGHT ANALYSIS")
-    print(f"{'='*65}")
-    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s}")
-    print("-" * 65)
+    print(f"{'='*80}")
+    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s} | {'Learned b':>9s}")
+    print("-" * 80)
     total_int8 = 0
     total_packed = 0
     for name, layer in model.named_modules():
@@ -167,10 +167,11 @@ def analyze_model(model):
             n = W_int.numel()
             total_int8 += n
             total_packed += math.ceil(n * bits / 8)
-            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B")
-    print("-" * 65)
-    print(f"{'TOTAL':<25s} |      |      |        |      | {total_packed:>10,} B  (int8 would be {total_int8:,} B)")
-    print(f"{'='*65}")
+            learned_b = layer.b.mean().item()
+            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B | {learned_b:9.3f}")
+    print("-" * 80)
+    print(f"{'TOTAL':<25s} |      |      |        |      | {total_packed:>10,} B  | (int8 would be {total_int8:,} B)")
+    print(f"{'='*80}")
 
 
 def compare_sizes(model, compressed_dict, filepath="compressed.pt"):
