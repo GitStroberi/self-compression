@@ -185,7 +185,7 @@ def train(args, run_dir):
 
     # Build dataset
     dataset_fn = DATASET_REGISTRY[args.dataset]
-    dl, dl_test = dataset_fn(args.batch_size)
+    dl, dl_test = dataset_fn(args.batch_size, root=args.dataset_root)
 
     print(f"Device: {device}")
     print(f"Model: {args.model} | Dataset: {args.dataset} | Epochs: {args.epochs}")
@@ -289,6 +289,7 @@ def main():
     parser.add_argument("--init-b", type=float, default=4.0, help="Initial bit-width for SCNN layers")
     parser.add_argument("--init-e", type=float, default=-8.0, help="Initial exponent for SCNN layers")
     parser.add_argument("--checkpoint-freq", type=int, default=50, help="Checkpoint every N epochs")
+    parser.add_argument("--dataset-root", type=str, default="./data", help="Root directory for dataset")
     parser.add_argument("--run-name", type=str, default="", help="Optional suffix for run directory name")
     args = parser.parse_args()
 
