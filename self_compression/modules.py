@@ -12,8 +12,26 @@ def cast_tuple(t, length=1):
     return t if isinstance(t, tuple) else ((t,) * length)
 
 
+def hard_clamp(x, b):
+    """Hard min/max clamp from the original SCNN reference implementation.
+
+    Maps inputs into the range [-2^{b-1}, 2^{b-1} - 1] using torch.min/max.
+    This is non-differentiable at the boundaries but matches the paper exactly.
+
+    Args:
+        x: Input tensor.
+        b: Bit-width parameter (non-negative after ReLU).
+
+    Returns:
+        Tensor of the same shape as x, hard-clamped.
+    """
+    b = F.relu(b)
+    c = 2 ** (b - 1)
+    return torch.minimum(torch.maximum(x, -c), c - 1)
+
+
 def smooth_soft_clamp(x, b):
-    """Smooth soft-clamp for differentiable quantization.
+    """Smooth soft-clamp for differentiable quantization (our novelty).
 
     Maps inputs into the range (-2^{b-1}, 2^{b-1}) using:
         out = x / (1 + |x| / 2^{b-1})
@@ -94,6 +112,14 @@ class SCNNConv2d(nn.Module):
         """Return the soft-clamped, scaled weight (before rounding)."""
         x = (2 ** (-self.e)) * self.weight
         return smooth_soft_clamp(x, self.b)
+
+    def qweight_hard(self):
+        """Return the hard-clamped, scaled weight (before rounding).
+
+        Uses the original min/max clamp from the reference implementation.
+        """
+        x = (2 ** (-self.e)) * self.weight
+        return hard_clamp(x, self.b)
 
     def get_integer_weights(self):
         """Extract the truly quantized integer weights for compressed storage.

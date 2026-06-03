@@ -110,7 +110,7 @@ def load_compressed(compressed_dict, model_cls, device="cpu"):
 
     Args:
         compressed_dict: dict produced by compress_model().
-        model_cls: model class (e.g., Net or ResNet20SCNN).
+        model_cls: model class.
         device: target device.
 
     Returns:
