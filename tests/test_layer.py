@@ -3,11 +3,12 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "self_compression"))
+# Ensure repo root is on path so package imports work
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import torch
 
-from modules import SCNNConv2d, smooth_soft_clamp
+from self_compression.modules import SCNNConv2d, smooth_soft_clamp
 
 
 class TestSmoothSoftClamp:

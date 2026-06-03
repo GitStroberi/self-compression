@@ -2,15 +2,16 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "self_compression"))
+# Ensure repo root is on path so package imports work
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import torch
 import torch.nn as nn
 from torch.optim import Adam
 
-from modules import SCNNConv2d
-from models import Net, ResNet20SCNN
-from datasets import get_mnist, get_cifar10
+from self_compression.modules import SCNNConv2d
+from self_compression.models import Net, ResNet20SCNN
+from self_compression.datasets import get_mnist, get_cifar10
 
 
 print("=" * 60)

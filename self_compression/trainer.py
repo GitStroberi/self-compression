@@ -23,8 +23,8 @@ import torch.nn as nn
 import tqdm
 from torch.optim import Adam
 
-from datasets import get_cifar10, get_mnist
-from models import Net, ResNet20SCNN
+from .datasets import get_cifar10, get_mnist
+from .models import Net, ResNet20SCNN
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

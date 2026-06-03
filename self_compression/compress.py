@@ -14,8 +14,8 @@ import tempfile
 import numpy as np
 import torch
 
-from modules import SCNNConv2d, bits_needed_for_range
-from trainer import MODEL_REGISTRY
+from .modules import SCNNConv2d, bits_needed_for_range
+from .trainer import MODEL_REGISTRY
 
 
 # ---------------------------------------------------------------------------
