@@ -129,3 +129,49 @@ class ResNet20SCNN(nn.Module):
         out = torch.flatten(out, 1)
         out = self.fc(out)
         return out
+
+
+class ResNet18SCNN(nn.Module):
+    """ResNet18 for ImageNet-1k using SCNN quantized layers.
+
+    Standard torchvision-style ResNet18 stem (7x7, stride 2) followed by
+    maxpool and four residual stages with [2, 2, 2, 2] BasicBlocks.
+    """
+
+    def __init__(self, num_classes=1000, init_b=2.0, init_e=-8.0):
+        super().__init__()
+        self.in_planes = 64
+        self.conv1 = SCNNConv2d(
+            3, 64, 7, stride=2, padding=3, bias=False,
+            init_b=init_b, init_e=init_e,
+        )
+        self.bn1 = nn.BatchNorm2d(64)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = self._make_layer(64, 2, stride=1, init_b=init_b, init_e=init_e)
+        self.layer2 = self._make_layer(128, 2, stride=2, init_b=init_b, init_e=init_e)
+        self.layer3 = self._make_layer(256, 2, stride=2, init_b=init_b, init_e=init_e)
+        self.layer4 = self._make_layer(512, 2, stride=2, init_b=init_b, init_e=init_e)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, num_classes)
+
+    def _make_layer(self, planes, num_blocks, stride, init_b=2.0, init_e=-8.0):
+        """Create a stack of BasicBlockSCNN layers."""
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for s in strides:
+            layers.append(BasicBlockSCNN(self.in_planes, planes, s, init_b=init_b, init_e=init_e))
+            self.in_planes = planes * BasicBlockSCNN.expansion
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        """Forward pass. Input: (N, 3, 224, 224). Output: (N, num_classes)."""
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.maxpool(out)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        out = self.avgpool(out)
+        out = torch.flatten(out, 1)
+        out = self.fc(out)
+        return out

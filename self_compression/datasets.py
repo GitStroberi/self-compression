@@ -2,7 +2,7 @@
 
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
-from torchvision.datasets import CIFAR10, MNIST
+from torchvision.datasets import CIFAR10, ImageFolder, MNIST
 
 
 def get_mnist(batch_size=512, root="./data", num_workers=0):
@@ -44,3 +44,33 @@ def get_cifar10(batch_size=128, root="./data", num_workers=0):
     dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return dl, dl_test
+
+
+def get_imagenet1k(batch_size=256, root="./data/imagenet", num_workers=0):
+    """ImageNet-1k loaders with standard torchvision transforms.
+
+    Expects root to contain ``train/`` and ``val/`` subfolders in the standard
+    ImageFolder layout (one directory per class).
+
+    Args:
+        batch_size: Batch size for both train and val loaders.
+        root: Path to the ImageNet root directory.
+        num_workers: DataLoader workers (0 is safest on Windows/ROCm).
+    """
+    t_train = T.Compose([
+        T.RandomResizedCrop(224),
+        T.RandomHorizontalFlip(),
+        T.ToTensor(),
+        T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+    t_val = T.Compose([
+        T.Resize(256),
+        T.CenterCrop(224),
+        T.ToTensor(),
+        T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+    ds = ImageFolder(root=f"{root}/train", transform=t_train)
+    ds_val = ImageFolder(root=f"{root}/val", transform=t_val)
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+    dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    return dl, dl_val

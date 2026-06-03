@@ -23,8 +23,8 @@ import torch.nn as nn
 import tqdm
 from torch.optim import Adam
 
-from .datasets import get_cifar10, get_mnist
-from .models import Net, ResNet20SCNN
+from .datasets import get_cifar10, get_imagenet1k, get_mnist
+from .models import Net, ResNet18SCNN, ResNet20SCNN
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -36,11 +36,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MODEL_REGISTRY = {
     "Net": Net,
     "ResNet20SCNN": ResNet20SCNN,
+    "ResNet18SCNN": ResNet18SCNN,
 }
 
 DATASET_REGISTRY = {
     "mnist": get_mnist,
     "cifar10": get_cifar10,
+    "imagenet1k": get_imagenet1k,
 }
 
 

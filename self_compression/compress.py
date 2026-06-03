@@ -243,6 +243,7 @@ def main():
     default_shapes = {
         "Net": (1, 28, 28),
         "ResNet20SCNN": (3, 32, 32),
+        "ResNet18SCNN": (3, 224, 224),
     }
     input_shape = tuple(args.input_shape) if args.input_shape else default_shapes.get(args.model)
     if input_shape is None:
