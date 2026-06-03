@@ -5,9 +5,6 @@ torchvision>=0.15.0
 # Compression / analysis
 numpy>=1.24.0
 
-# HuggingFace datasets (optional, for ImageNet-1k flat layout support)
-datasets>=4.0.0
-
 # Training visualisation
 matplotlib>=3.7.0
 tqdm>=4.65.0
