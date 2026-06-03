@@ -18,3 +18,7 @@ runs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent context files
+AGENT.md
+agent.md
