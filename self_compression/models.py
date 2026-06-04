@@ -15,12 +15,12 @@ class Net(nn.Module):
     dimensions.
     """
 
-    def __init__(self, init_b=2.0, init_e=-8.0):
+    def __init__(self, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         super().__init__()
-        self.conv1 = SCNNConv2d(1, 32, 5, init_b=init_b, init_e=init_e)
-        self.conv2 = SCNNConv2d(32, 32, 5, init_b=init_b, init_e=init_e)
-        self.conv3 = SCNNConv2d(32, 64, 3, init_b=init_b, init_e=init_e)
-        self.conv4 = SCNNConv2d(64, 64, 3, init_b=init_b, init_e=init_e)
+        self.conv1 = SCNNConv2d(1, 32, 5, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.conv2 = SCNNConv2d(32, 32, 5, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.conv3 = SCNNConv2d(32, 64, 3, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.conv4 = SCNNConv2d(64, 64, 3, init_b=init_b, init_e=init_e, **scnn_kwargs)
 
         self.bnorm1 = nn.BatchNorm2d(32, affine=False, track_running_stats=False)
         self.bnorm2 = nn.BatchNorm2d(64, affine=False, track_running_stats=False)
@@ -33,7 +33,7 @@ class Net(nn.Module):
             dummy = torch.zeros(1, 1, 28, 28)
             out = self._conv_blocks(dummy)
             flat_features = out.view(1, -1).shape[1]
-        self.final_conv = SCNNConv2d(flat_features, 10, 1, init_b=init_b, init_e=init_e)
+        self.final_conv = SCNNConv2d(flat_features, 10, 1, init_b=init_b, init_e=init_e, **scnn_kwargs)
 
     def _conv_blocks(self, x):
         """Feature extractor backbone (conv + pool blocks)."""
@@ -61,16 +61,16 @@ class BasicBlockSCNN(nn.Module):
 
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, init_b=2.0, init_e=-8.0):
+    def __init__(self, in_planes, planes, stride=1, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         super().__init__()
         self.conv1 = SCNNConv2d(
             in_planes, planes, 3, stride=stride, padding=1, bias=False,
-            init_b=init_b, init_e=init_e,
+            init_b=init_b, init_e=init_e, **scnn_kwargs,
         )
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = SCNNConv2d(
             planes, planes, 3, stride=1, padding=1, bias=False,
-            init_b=init_b, init_e=init_e,
+            init_b=init_b, init_e=init_e, **scnn_kwargs,
         )
         self.bn2 = nn.BatchNorm2d(planes)
 
@@ -79,7 +79,7 @@ class BasicBlockSCNN(nn.Module):
             self.shortcut = nn.Sequential(
                 SCNNConv2d(
                     in_planes, self.expansion * planes, 1, stride=stride,
-                    bias=False, init_b=init_b, init_e=init_e,
+                    bias=False, init_b=init_b, init_e=init_e, **scnn_kwargs,
                 ),
                 nn.BatchNorm2d(self.expansion * planes),
             )
@@ -96,26 +96,26 @@ class BasicBlockSCNN(nn.Module):
 class ResNet20SCNN(nn.Module):
     """ResNet20 for CIFAR-10 using SCNN quantized layers."""
 
-    def __init__(self, num_classes=10, init_b=2.0, init_e=-8.0):
+    def __init__(self, num_classes=10, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         super().__init__()
         self.in_planes = 16
         self.conv1 = SCNNConv2d(
             3, 16, 3, stride=1, padding=1, bias=False,
-            init_b=init_b, init_e=init_e,
+            init_b=init_b, init_e=init_e, **scnn_kwargs,
         )
         self.bn1 = nn.BatchNorm2d(16)
-        self.layer1 = self._make_layer(16, 3, stride=1, init_b=init_b, init_e=init_e)
-        self.layer2 = self._make_layer(32, 3, stride=2, init_b=init_b, init_e=init_e)
-        self.layer3 = self._make_layer(64, 3, stride=2, init_b=init_b, init_e=init_e)
+        self.layer1 = self._make_layer(16, 3, stride=1, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.layer2 = self._make_layer(32, 3, stride=2, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.layer3 = self._make_layer(64, 3, stride=2, init_b=init_b, init_e=init_e, **scnn_kwargs)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(64, num_classes)
 
-    def _make_layer(self, planes, num_blocks, stride, init_b=2.0, init_e=-8.0):
+    def _make_layer(self, planes, num_blocks, stride, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         """Create a stack of BasicBlockSCNN layers."""
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for s in strides:
-            layers.append(BasicBlockSCNN(self.in_planes, planes, s, init_b=init_b, init_e=init_e))
+            layers.append(BasicBlockSCNN(self.in_planes, planes, s, init_b=init_b, init_e=init_e, **scnn_kwargs))
             self.in_planes = planes * BasicBlockSCNN.expansion
         return nn.Sequential(*layers)
 
@@ -138,28 +138,28 @@ class ResNet18SCNN(nn.Module):
     maxpool and four residual stages with [2, 2, 2, 2] BasicBlocks.
     """
 
-    def __init__(self, num_classes=1000, init_b=2.0, init_e=-8.0):
+    def __init__(self, num_classes=1000, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         super().__init__()
         self.in_planes = 64
         self.conv1 = SCNNConv2d(
             3, 64, 7, stride=2, padding=3, bias=False,
-            init_b=init_b, init_e=init_e,
+            init_b=init_b, init_e=init_e, **scnn_kwargs,
         )
         self.bn1 = nn.BatchNorm2d(64)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(64, 2, stride=1, init_b=init_b, init_e=init_e)
-        self.layer2 = self._make_layer(128, 2, stride=2, init_b=init_b, init_e=init_e)
-        self.layer3 = self._make_layer(256, 2, stride=2, init_b=init_b, init_e=init_e)
-        self.layer4 = self._make_layer(512, 2, stride=2, init_b=init_b, init_e=init_e)
+        self.layer1 = self._make_layer(64, 2, stride=1, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.layer2 = self._make_layer(128, 2, stride=2, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.layer3 = self._make_layer(256, 2, stride=2, init_b=init_b, init_e=init_e, **scnn_kwargs)
+        self.layer4 = self._make_layer(512, 2, stride=2, init_b=init_b, init_e=init_e, **scnn_kwargs)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512, num_classes)
 
-    def _make_layer(self, planes, num_blocks, stride, init_b=2.0, init_e=-8.0):
+    def _make_layer(self, planes, num_blocks, stride, init_b=2.0, init_e=-8.0, **scnn_kwargs):
         """Create a stack of BasicBlockSCNN layers."""
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for s in strides:
-            layers.append(BasicBlockSCNN(self.in_planes, planes, s, init_b=init_b, init_e=init_e))
+            layers.append(BasicBlockSCNN(self.in_planes, planes, s, init_b=init_b, init_e=init_e, **scnn_kwargs))
             self.in_planes = planes * BasicBlockSCNN.expansion
         return nn.Sequential(*layers)
 

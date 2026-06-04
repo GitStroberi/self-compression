@@ -112,6 +112,13 @@ def get_imagenet1k(batch_size=256, root="./data/imagenet", num_workers=0):
         ds = ImageFolder(root=f"{root}/train", transform=t_train)
         ds_val = ImageFolder(root=f"{root}/val", transform=t_val)
 
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    persistent = num_workers > 0
+    dl = DataLoader(
+        ds, batch_size=batch_size, shuffle=True,
+        num_workers=num_workers, pin_memory=True, persistent_workers=persistent,
+    )
+    dl_val = DataLoader(
+        ds_val, batch_size=batch_size, shuffle=False,
+        num_workers=num_workers, pin_memory=True, persistent_workers=persistent,
+    )
     return dl, dl_val

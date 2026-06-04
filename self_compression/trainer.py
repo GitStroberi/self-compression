@@ -58,6 +58,8 @@ def _scnn_param_ids(model):
             ids.add(id(module.weight))
             ids.add(id(module.e))
             ids.add(id(module.b))
+            if module.prune:
+                ids.add(id(module.t))
     return ids
 
 
@@ -106,7 +108,7 @@ def plot_metrics(run_dir, history, dataset_name=""):
 # Training / evaluation
 # ---------------------------------------------------------------------------
 
-def train_epoch(model, loader, loss_fn, optimizer, scnn_layers, lambda_comp, desc="Epoch"):
+def train_epoch(model, loader, loss_fn, optimizer, scnn_layers, lambda_comp, grad_clip=0.0, desc="Epoch"):
     """Train for one epoch. Returns dict with metrics."""
     model.train()
     epoch_loss = 0.0
@@ -120,9 +122,14 @@ def train_epoch(model, loader, loss_fn, optimizer, scnn_layers, lambda_comp, des
         optimizer.zero_grad()
         pred = model(samples)
         loss = loss_fn(pred, targets)
-        q = compute_q(scnn_layers)
-        total_loss = loss + lambda_comp * q
+        if lambda_comp != 0.0:
+            q = compute_q(scnn_layers)
+            total_loss = loss + lambda_comp * q
+        else:
+            total_loss = loss
         total_loss.backward()
+        if grad_clip > 0.0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
         epoch_loss += total_loss.item()
@@ -181,11 +188,30 @@ def train(args, run_dir):
     """Main training loop — works for any registered model + dataset."""
     # Build model
     model_cls = MODEL_REGISTRY[args.model]
-    model = model_cls(init_b=args.init_b, init_e=args.init_e).to(device)
+    model_kwargs = {"init_b": args.init_b, "init_e": args.init_e}
+    if args.prune:
+        model_kwargs.update({
+            "prune": True,
+            "prune_tau": args.prune_tau,
+            "init_t": args.init_t,
+        })
+    model = model_cls(**model_kwargs).to(device)
+
+    # Load pretrained checkpoint if provided
+    if args.pretrained:
+        print(f"Loading pretrained checkpoint: {args.pretrained}")
+        ckpt = torch.load(args.pretrained, map_location=device, weights_only=False)
+        state = ckpt["model"] if "model" in ckpt else ckpt
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if missing:
+            print(f"  Warning: missing keys in checkpoint: {missing}")
+        if unexpected:
+            print(f"  Warning: unexpected keys in checkpoint: {unexpected}")
+        print("Pretrained weights loaded.")
 
     # Build dataset
     dataset_fn = DATASET_REGISTRY[args.dataset]
-    dl, dl_test = dataset_fn(args.batch_size, root=args.dataset_root)
+    dl, dl_test = dataset_fn(args.batch_size, root=args.dataset_root, num_workers=args.num_workers)
 
     print(f"Device: {device}")
     print(f"Model: {args.model} | Dataset: {args.dataset} | Epochs: {args.epochs}")
@@ -223,8 +249,10 @@ def train(args, run_dir):
     start_time = datetime.now()
 
     for epoch in range(1, args.epochs + 1):
+        effective_lambda = 0.0 if epoch <= args.lambda_warmup_epochs else args.lambda_comp
         train_metrics = train_epoch(
-            model, dl, loss_fn, optimizer, scnn_layers, args.lambda_comp,
+            model, dl, loss_fn, optimizer, scnn_layers, effective_lambda,
+            grad_clip=args.grad_clip,
             desc=f"Epoch {epoch:3d}/{args.epochs}"
         )
         test_metrics = evaluate(model, dl_test, loss_fn, scnn_layers)
@@ -279,15 +307,18 @@ def train(args, run_dir):
     torch.save({"history": history, "args": vars(args)}, os.path.join(run_dir, "metrics_history.pt"))
     plot_metrics(run_dir, history, dataset_name=args.dataset)
 
-    # Print learned bit-widths
+    # Print learned bit-widths and pruning stats
     bitwidths = {n: l.b.mean().item() for n, l in model.named_modules() if hasattr(l, "b")}
+    pruned = {n: l.pruned_ratio() for n, l in model.named_modules() if hasattr(l, "t")}
     print("\nLearned bit-widths per layer:")
     for n, b in bitwidths.items():
-        print(f"  {n:40s}: {b:.3f} bits")
+        p = pruned.get(n, 0.0)
+        print(f"  {n:40s}: {b:.3f} bits | pruned={p*100:.1f}%")
 
     with open(os.path.join(run_dir, "bitwidths.txt"), "w") as f:
         for n, b in bitwidths.items():
-            f.write(f"{n}: {b:.4f}\n")
+            p = pruned.get(n, 0.0)
+            f.write(f"{n}: {b:.4f} bits | pruned={p*100:.2f}%\n")
 
     if torch.cuda.is_available():
         torch.cuda.synchronize()
@@ -320,6 +351,22 @@ def main():
     parser.add_argument("--lr-steps", type=str, default="30,60,80",
                         help="Step scheduler milestones, comma-separated (default: 30,60,80)")
     parser.add_argument("--gamma", type=float, default=0.1, help="Step LR decay factor (default: 0.1)")
+    parser.add_argument("--num-workers", type=int, default=0,
+                        help="DataLoader workers (default: 0, use 4+ for ImageNet)")
+    parser.add_argument("--pretrained", type=str, default="",
+                        help="Path to pretrained checkpoint to load before training")
+    parser.add_argument("--grad-clip", type=float, default=0.0,
+                        help="Max gradient norm for clipping (0 = disabled)")
+    # Pruning options
+    parser.add_argument("--prune", action="store_true",
+                        help="Enable differentiable pruning (learnable threshold t)")
+    parser.add_argument("--prune-tau", type=float, default=0.1,
+                        help="Soft-pruning temperature (default: 0.1)")
+    parser.add_argument("--init-t", type=float, default=-6.0,
+                        help="Initial pruning threshold (default: -6.0)")
+    # Compression warm-up
+    parser.add_argument("--lambda-warmup-epochs", type=int, default=0,
+                        help="Number of epochs to train with lambda_comp=0 before enabling compression")
     args = parser.parse_args()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

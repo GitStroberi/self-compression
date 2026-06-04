@@ -19,6 +19,9 @@ runs/
 .DS_Store
 Thumbs.db
 
+# Logs
+*.log
+
 # Agent context files
 AGENT.md
 agent.md

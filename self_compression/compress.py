@@ -79,7 +79,8 @@ def compress_model(model):
     for name, module in model.named_modules():
         if isinstance(module, SCNNConv2d):
             with torch.no_grad():
-                W_int = torch.round(module.qweight()).cpu()
+                W_int, e, b = module.get_integer_weights()
+                W_int = W_int.cpu()
             w_min = int(W_int.min().item())
             w_max = int(W_int.max().item())
             bits = bits_needed_for_range(w_min, w_max)
@@ -94,8 +95,8 @@ def compress_model(model):
                 "bits": bits,
                 "w_min": w_min,
                 "packed": packed_bytes,
-                "e": module.e.detach().cpu().numpy().astype(np.float32),
-                "b": module.b.detach().cpu().numpy().astype(np.float32),
+                "e": e.numpy().astype(np.float32),
+                "b": b.numpy().astype(np.float32),
                 "bias": module.bias.detach().cpu().numpy() if module.bias is not None else None,
             }
         elif isinstance(module, (torch.nn.BatchNorm2d, torch.nn.Linear)):
@@ -105,18 +106,19 @@ def compress_model(model):
     return compressed
 
 
-def load_compressed(compressed_dict, model_cls, device="cpu"):
+def load_compressed(compressed_dict, model_cls, device="cpu", **model_kwargs):
     """Reconstruct an SCNN model from a custom bit-packed checkpoint.
 
     Args:
         compressed_dict: dict produced by compress_model().
         model_cls: model class.
         device: target device.
+        **model_kwargs: forwarded to ``model_cls`` constructor.
 
     Returns:
         Reconstructed model on the requested device.
     """
-    model = model_cls().to(device)
+    model = model_cls(**model_kwargs).to(device)
     model.eval()
 
     for name, module in model.named_modules():
@@ -152,14 +154,15 @@ def analyze_model(model):
     print(f"\n{'='*80}")
     print("PER-LAYER INTEGER WEIGHT ANALYSIS")
     print(f"{'='*80}")
-    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s} | {'Learned b':>9s}")
+    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s} | {'Learned b':>9s} | {'Pruned %':>8s}")
     print("-" * 80)
     total_int8 = 0
     total_packed = 0
     for name, layer in model.named_modules():
         if isinstance(layer, SCNNConv2d):
             with torch.no_grad():
-                W_int = torch.round(layer.qweight()).cpu()
+                W_int, _, _ = layer.get_integer_weights()
+                W_int = W_int.cpu()
             w_min = int(W_int.min().item())
             w_max = int(W_int.max().item())
             n_unique = len(torch.unique(W_int))
@@ -168,7 +171,8 @@ def analyze_model(model):
             total_int8 += n
             total_packed += math.ceil(n * bits / 8)
             learned_b = layer.b.mean().item()
-            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B | {learned_b:9.3f}")
+            pruned_pct = layer.pruned_ratio() * 100
+            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B | {learned_b:9.3f} | {pruned_pct:7.1f}%")
     print("-" * 80)
     print(f"{'TOTAL':<25s} |      |      |        |      | {total_packed:>10,} B  | (int8 would be {total_int8:,} B)")
     print(f"{'='*80}")
@@ -194,6 +198,8 @@ def compare_sizes(model, compressed_dict, filepath="compressed.pt"):
             scnn_param_ids.add(id(l.weight))
             scnn_param_ids.add(id(l.e))
             scnn_param_ids.add(id(l.b))
+            if l.prune:
+                scnn_param_ids.add(id(l.t))
         other_params = sum(p.numel() for p in model.parameters() if id(p) not in scnn_param_ids)
         theoretical = qbits.item() / 8 + other_params * 4  # SCNN weights in packed bits, rest in FP32 bytes
 
@@ -250,11 +256,18 @@ def main():
         raise ValueError("Please specify --input-shape for this model.")
 
     print(f"Loading trained model from: {args.ckpt}")
-    model = model_cls().to(device)
-    state = torch.load(args.ckpt, map_location=device)
-    if "model" in state:
-        state = state["model"]
-    model.load_state_dict(state)
+    state = torch.load(args.ckpt, map_location=device, weights_only=False)
+    raw_state = state["model"] if "model" in state else state
+
+    # Auto-detect whether checkpoint was trained with pruning enabled
+    has_prune = any(k.endswith(".t") for k in raw_state.keys())
+    model_kwargs = {}
+    if has_prune:
+        model_kwargs["prune"] = True
+        print("  Detected pruning in checkpoint.")
+
+    model = model_cls(**model_kwargs).to(device)
+    model.load_state_dict(raw_state)
     model.eval()
 
     analyze_model(model)

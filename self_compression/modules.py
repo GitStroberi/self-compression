@@ -72,16 +72,23 @@ def bits_needed_for_range(vmin, vmax):
 
 
 class SCNNConv2d(nn.Module):
-    """Quantized 2D convolution with learnable bit-width and exponent.
+    """Quantized 2D convolution with learnable bit-width, exponent, and optional pruning.
 
-    During training, the weight is soft-clamped to a learned dynamic range
-    and discretized with a straight-through estimator. After training, integer
-    weights can be extracted and the layer can run in a fast "compressed" mode
-    that skips the quantization math.
+    During training the weight is soft-clamped to a learned dynamic range,
+    optionally soft-pruned with a learnable threshold, and discretized with a
+    straight-through estimator. After training, integer weights can be extracted
+    and the layer can run in a fast "compressed" mode that skips the
+    quantization math.
+
+    When ``prune=True`` a learnable threshold ``t`` is added.  A weight is
+    considered pruned when ``|qw| <= t``.  During training a differentiable
+    sigmoid mask is used so gradients flow to ``t``.  At inference /
+    compression time hard pruning is applied.
     """
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0,
-                 dilation=1, groups=1, bias=False, init_b=2.0, init_e=-8.0):
+                 dilation=1, groups=1, bias=False, init_b=2.0, init_e=-8.0,
+                 prune=False, prune_tau=0.1, init_t=-6.0):
         super().__init__()
         self.kernel_size = cast_tuple(kernel_size, 2)
         self.stride = stride
@@ -101,15 +108,35 @@ class SCNNConv2d(nn.Module):
 
         self.e = nn.Parameter(torch.full((out_channels, 1, 1, 1), init_e))
         self.b = nn.Parameter(torch.full((out_channels, 1, 1, 1), init_b))
-        # Persistent flag so state_dict includes it and compressed checkpoints work
+        # Persistent buffer so state_dict includes it and compressed checkpoints work
         self.register_buffer("_compressed", torch.tensor(False))
+        # Python flag avoids GPU sync in forward() (buffer stays for serialization)
+        self._is_compressed = False
+
+        # Optional differentiable pruning
+        self.prune = prune
+        if prune:
+            self.prune_tau = prune_tau
+            self.t = nn.Parameter(torch.full((out_channels, 1, 1, 1), init_t))
 
     def qbits(self):
-        """Return total bits consumed by this layer's quantized weights."""
+        """Return total bits consumed by this layer's quantized weights.
+
+        When pruning is enabled the count is weighted by the soft pruning mask,
+        so gradients can flow to the threshold ``t``.
+        """
+        if self.prune:
+            qw = self.qweight()
+            mask = torch.sigmoid((qw.abs() - self.t) / self.prune_tau)
+            # Sum over all dims except channel (dim 0)
+            dims = tuple(range(1, mask.ndim))
+            nonzero_soft = mask.sum(dim=dims)  # (out_channels,)
+            b = F.relu(self.b).reshape(-1)
+            return (nonzero_soft * b).sum()
         return F.relu(self.b).sum() * math.prod(self.weight.shape[1:])
 
     def qweight(self):
-        """Return the soft-clamped, scaled weight (before rounding)."""
+        """Return the soft-clamped, scaled weight (before rounding / pruning)."""
         x = (2 ** (-self.e)) * self.weight
         return smooth_soft_clamp(x, self.b)
 
@@ -124,6 +151,9 @@ class SCNNConv2d(nn.Module):
     def get_integer_weights(self):
         """Extract the truly quantized integer weights for compressed storage.
 
+        Hard pruning is applied here so pruned weights become exact zeros in
+        the packed checkpoint.
+
         Returns:
             W_int: Integer weight tensor (same shape as self.weight), dtype int16
             e:     Exponent tensor (out_ch, 1, 1, 1)
@@ -133,8 +163,20 @@ class SCNNConv2d(nn.Module):
         """
         with torch.no_grad():
             qw = self.qweight()
+            if self.prune:
+                mask = (qw.abs() > self.t).float()
+                qw = qw * mask
             W_int = torch.round(qw).to(torch.int16)
             return W_int, self.e.detach().cpu(), self.b.detach().cpu()
+
+    def pruned_ratio(self):
+        """Return the fraction of weights pruned (hard threshold) as a float in [0,1]."""
+        if not self.prune:
+            return 0.0
+        with torch.no_grad():
+            qw = self.qweight()
+            mask = (qw.abs() > self.t).float()
+            return 1.0 - mask.mean().item()
 
     def set_from_integer_weights(self, W_int, e, b):
         """Reconstruct FP32 weights from compressed integer representation.
@@ -146,16 +188,25 @@ class SCNNConv2d(nn.Module):
         self.b.data = b.to(self.b.device)
         self.weight.data = (2 ** self.e) * W_int.to(self.weight.dtype)
         self._compressed.fill_(True)
+        self._is_compressed = True
 
     def forward(self, x):
         """Forward pass. Uses pre-quantized weights if _compressed is set."""
-        if self._compressed.item():
+        if self._is_compressed:
             return F.conv2d(
                 x, weight=self.weight, bias=self.bias,
                 stride=self.stride, padding=self.padding,
                 dilation=self.dilation, groups=self.groups,
             )
         qw = self.qweight()
+        if self.prune:
+            # Soft mask during training for differentiability;
+            # hard mask at eval so compressed model matches exactly.
+            if self.training:
+                mask = torch.sigmoid((qw.abs() - self.t) / self.prune_tau)
+            else:
+                mask = (qw.abs() > self.t).float()
+            qw = qw * mask
         w = (torch.round(qw) - qw).detach() + qw  # straight-through estimator
         weight = (2 ** self.e) * w
         return F.conv2d(
