@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import tqdm
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 
 from .datasets import get_cifar10, get_imagenet1k, get_mnist
 from .models import Net, ResNet18SCNN, ResNet20SCNN
@@ -189,13 +189,32 @@ def train(args, run_dir):
 
     print(f"Device: {device}")
     print(f"Model: {args.model} | Dataset: {args.dataset} | Epochs: {args.epochs}")
-    print(f"BS: {args.batch_size} | LR: {args.lr} | lambda: {args.lambda_comp} | init_b: {args.init_b}")
+    print(f"BS: {args.batch_size} | LR: {args.lr} | optimizer: {args.optimizer} | scheduler: {args.lr_scheduler}")
+    print(f"lambda: {args.lambda_comp} | init_b: {args.init_b} | init_e: {args.init_e}")
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
 
-    optimizer = Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    # Optimizer
+    if args.optimizer == "adam":
+        optimizer = Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer == "sgd":
+        optimizer = SGD(
+            model.parameters(), lr=args.lr,
+            momentum=args.momentum, weight_decay=args.weight_decay,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
+
+    # Scheduler
+    if args.lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    elif args.lr_scheduler == "step":
+        milestones = [int(s) for s in args.lr_steps.split(",")]
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=args.gamma)
+    else:
+        raise ValueError(f"Unknown scheduler: {args.lr_scheduler}")
+
     loss_fn = nn.CrossEntropyLoss()
     scnn_layers = [l for l in model.modules() if hasattr(l, "qbits")]
 
@@ -291,6 +310,16 @@ def main():
     parser.add_argument("--checkpoint-freq", type=int, default=50, help="Checkpoint every N epochs")
     parser.add_argument("--dataset-root", type=str, default="./data", help="Root directory for dataset")
     parser.add_argument("--run-name", type=str, default="", help="Optional suffix for run directory name")
+    # Optimizer / scheduler (ImageNet-style SGD support)
+    parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "sgd"],
+                        help="Optimizer to use (default: adam)")
+    parser.add_argument("--momentum", type=float, default=0.9, help="SGD momentum (default: 0.9)")
+    parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (default: 1e-4)")
+    parser.add_argument("--lr-scheduler", type=str, default="cosine", choices=["cosine", "step"],
+                        help="LR scheduler (default: cosine)")
+    parser.add_argument("--lr-steps", type=str, default="30,60,80",
+                        help="Step scheduler milestones, comma-separated (default: 30,60,80)")
+    parser.add_argument("--gamma", type=float, default=0.1, help="Step LR decay factor (default: 0.1)")
     args = parser.parse_args()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
