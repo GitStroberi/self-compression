@@ -235,7 +235,7 @@ def train(args, run_dir):
                 "epoch": epoch,
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
                 "best_acc": best_acc,
                 "args": vars(args),
             }, os.path.join(run_dir, "best_model.pt"))
