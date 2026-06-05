@@ -154,7 +154,7 @@ def analyze_model(model):
     print(f"\n{'='*80}")
     print("PER-LAYER INTEGER WEIGHT ANALYSIS")
     print(f"{'='*80}")
-    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s} | {'Learned b':>9s} | {'Pruned %':>8s}")
+    print(f"{'Layer':<25s} | {'Min':>4s} | {'Max':>4s} | {'Unique':>6s} | {'Bits':>4s} | {'Packed':>10s} | {'Learned b':>9s}")
     print("-" * 80)
     total_int8 = 0
     total_packed = 0
@@ -171,8 +171,7 @@ def analyze_model(model):
             total_int8 += n
             total_packed += math.ceil(n * bits / 8)
             learned_b = layer.b.mean().item()
-            pruned_pct = layer.pruned_ratio() * 100
-            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B | {learned_b:9.3f} | {pruned_pct:7.1f}%")
+            print(f"{name:<25s} | {w_min:4d} | {w_max:4d} | {n_unique:6d} | {bits:4d} | {math.ceil(n*bits/8):>10,} B | {learned_b:9.3f}")
     print("-" * 80)
     print(f"{'TOTAL':<25s} |      |      |        |      | {total_packed:>10,} B  | (int8 would be {total_int8:,} B)")
     print(f"{'='*80}")
@@ -198,8 +197,6 @@ def compare_sizes(model, compressed_dict, filepath="compressed.pt"):
             scnn_param_ids.add(id(l.weight))
             scnn_param_ids.add(id(l.e))
             scnn_param_ids.add(id(l.b))
-            if l.prune:
-                scnn_param_ids.add(id(l.t))
         other_params = sum(p.numel() for p in model.parameters() if id(p) not in scnn_param_ids)
         theoretical = qbits.item() / 8 + other_params * 4  # SCNN weights in packed bits, rest in FP32 bytes
 
@@ -259,14 +256,7 @@ def main():
     state = torch.load(args.ckpt, map_location=device, weights_only=False)
     raw_state = state["model"] if "model" in state else state
 
-    # Auto-detect whether checkpoint was trained with pruning enabled
-    has_prune = any(k.endswith(".t") for k in raw_state.keys())
-    model_kwargs = {}
-    if has_prune:
-        model_kwargs["prune"] = True
-        print("  Detected pruning in checkpoint.")
-
-    model = model_cls(**model_kwargs).to(device)
+    model = model_cls().to(device)
     model.load_state_dict(raw_state)
     model.eval()
 

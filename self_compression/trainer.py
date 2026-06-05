@@ -58,8 +58,6 @@ def _scnn_param_ids(model):
             ids.add(id(module.weight))
             ids.add(id(module.e))
             ids.add(id(module.b))
-            if module.prune:
-                ids.add(id(module.t))
     return ids
 
 
@@ -188,14 +186,7 @@ def train(args, run_dir):
     """Main training loop — works for any registered model + dataset."""
     # Build model
     model_cls = MODEL_REGISTRY[args.model]
-    model_kwargs = {"init_b": args.init_b, "init_e": args.init_e}
-    if args.prune:
-        model_kwargs.update({
-            "prune": True,
-            "prune_tau": args.prune_tau,
-            "init_t": args.init_t,
-        })
-    model = model_cls(**model_kwargs).to(device)
+    model = model_cls(init_b=args.init_b, init_e=args.init_e).to(device)
 
     # Load pretrained checkpoint if provided
     if args.pretrained:
@@ -307,18 +298,15 @@ def train(args, run_dir):
     torch.save({"history": history, "args": vars(args)}, os.path.join(run_dir, "metrics_history.pt"))
     plot_metrics(run_dir, history, dataset_name=args.dataset)
 
-    # Print learned bit-widths and pruning stats
+    # Print learned bit-widths
     bitwidths = {n: l.b.mean().item() for n, l in model.named_modules() if hasattr(l, "b")}
-    pruned = {n: l.pruned_ratio() for n, l in model.named_modules() if hasattr(l, "t")}
     print("\nLearned bit-widths per layer:")
     for n, b in bitwidths.items():
-        p = pruned.get(n, 0.0)
-        print(f"  {n:40s}: {b:.3f} bits | pruned={p*100:.1f}%")
+        print(f"  {n:40s}: {b:.3f} bits")
 
     with open(os.path.join(run_dir, "bitwidths.txt"), "w") as f:
         for n, b in bitwidths.items():
-            p = pruned.get(n, 0.0)
-            f.write(f"{n}: {b:.4f} bits | pruned={p*100:.2f}%\n")
+            f.write(f"{n}: {b:.4f}\n")
 
     if torch.cuda.is_available():
         torch.cuda.synchronize()
@@ -357,13 +345,6 @@ def main():
                         help="Path to pretrained checkpoint to load before training")
     parser.add_argument("--grad-clip", type=float, default=0.0,
                         help="Max gradient norm for clipping (0 = disabled)")
-    # Pruning options
-    parser.add_argument("--prune", action="store_true",
-                        help="Enable differentiable pruning (learnable threshold t)")
-    parser.add_argument("--prune-tau", type=float, default=0.1,
-                        help="Soft-pruning temperature (default: 0.1)")
-    parser.add_argument("--init-t", type=float, default=-6.0,
-                        help="Initial pruning threshold (default: -6.0)")
     # Compression warm-up
     parser.add_argument("--lambda-warmup-epochs", type=int, default=0,
                         help="Number of epochs to train with lambda_comp=0 before enabling compression")
