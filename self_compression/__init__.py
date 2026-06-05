@@ -1,6 +1,6 @@
 """Self-Compressing Neural Networks package."""
 from .modules import SCNNConv2d
 from .models import Net, ResNet18SCNN, ResNet20SCNN
-from .datasets import get_imagenet1k, get_mnist, get_cifar10
+from .datasets import get_cifar10, get_imagenet1k, get_mnist
 
-__all__ = ["SCNNConv2d", "Net", "ResNet18SCNN", "ResNet20SCNN", "get_mnist", "get_cifar10", "get_imagenet1k"]
+__all__ = ["SCNNConv2d", "Net", "ResNet18SCNN", "ResNet20SCNN", "get_cifar10", "get_imagenet1k", "get_mnist"]

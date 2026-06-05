@@ -72,7 +72,8 @@ class TestSCNNConv2d:
         W_int, e, b = layer.get_integer_weights()
         layer.set_from_integer_weights(W_int, e, b)
 
-        assert layer._compressed.item() is True
+        assert layer._is_compressed is True
+        assert bool(layer._compressed) is True
         out2 = layer(x)
         # Should be nearly identical (tiny float rounding differences)
         torch.testing.assert_close(out1, out2, atol=1e-5, rtol=1e-5)

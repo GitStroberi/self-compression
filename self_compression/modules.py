@@ -1,4 +1,4 @@
-"""Custom SCNN layers — close to the reference implementation but with smooth soft-clamp."""
+"""Custom SCNN layers with both reference (hard clamp) and differentiable (smooth soft-clamp) quantization."""
 
 import math
 

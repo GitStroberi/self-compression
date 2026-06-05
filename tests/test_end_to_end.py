@@ -34,7 +34,7 @@ for step in range(5):
     pred = model(samples)
     loss = loss_fn(pred, targets)
     qbits = sum(l.qbits() for l in model.modules() if hasattr(l, "qbits"))
-    comp = qbits / sum(p.numel() for p in model.parameters())
+    comp = qbits / sum(l.weight.numel() for l in model.modules() if hasattr(l, "qbits"))
     total = loss + 0.05 * comp
     total.backward()
     optimizer.step()
@@ -61,7 +61,7 @@ for i, (samples, targets) in enumerate(dl):
     pred = model(samples)
     loss = loss_fn(pred, targets)
     qbits = sum(l.qbits() for l in model.modules() if hasattr(l, "qbits"))
-    comp = qbits / sum(p.numel() for p in model.parameters())
+    comp = qbits / sum(l.weight.numel() for l in model.modules() if hasattr(l, "qbits"))
     total = loss + 0.05 * comp
     total.backward()
     optimizer.step()

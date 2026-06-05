@@ -37,6 +37,9 @@ def get_mnist(batch_size=512, root="./data", num_workers=0):
         batch_size: Batch size for both train and test loaders.
         root: Directory to store downloaded data.
         num_workers: DataLoader workers (0 is safest on Windows/ROCm).
+
+    Returns:
+        (train_loader, test_loader): DataLoader instances.
     """
     t = T.Compose([T.ToTensor()])
     ds = MNIST(root=root, train=True, download=True, transform=t)
@@ -53,6 +56,9 @@ def get_cifar10(batch_size=128, root="./data", num_workers=0):
         batch_size: Batch size for both train and test loaders.
         root: Directory to store downloaded data.
         num_workers: DataLoader workers (0 is safest on Windows/ROCm).
+
+    Returns:
+        (train_loader, test_loader): DataLoader instances.
     """
     t_train = T.Compose([
         T.RandomCrop(32, padding=4),
@@ -86,6 +92,9 @@ def get_imagenet1k(batch_size=256, root="./data/imagenet", num_workers=0):
         batch_size: Batch size for both train and val loaders.
         root: Path to the ImageNet root directory.
         num_workers: DataLoader workers (0 is safest on Windows/ROCm).
+
+    Returns:
+        (train_loader, val_loader): DataLoader instances.
     """
     t_train = T.Compose([
         T.RandomResizedCrop(224),

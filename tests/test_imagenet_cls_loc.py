@@ -21,6 +21,7 @@ from self_compression.models import ResNet18SCNN
 # ---------------------------------------------------------------------------
 
 BATCH_SIZE = 64
+LAMBDA_COMP = 0.15
 
 # Try common ImageNet locations.  The test is skipped if none exist.
 _CANDIDATE_ROOTS = [
@@ -75,7 +76,7 @@ def main():
         out = model(imgs)
         loss = loss_fn(out, labels)
         q = sum(l.qbits() for l in scnn_layers) / sum(l.weight.numel() for l in scnn_layers)
-        total_loss = loss + 0.15 * q
+        total_loss = loss + LAMBDA_COMP * q
         total_loss.backward()
         optimizer.step()
         acc = (out.argmax(dim=1) == labels).float().mean().item() * 100
